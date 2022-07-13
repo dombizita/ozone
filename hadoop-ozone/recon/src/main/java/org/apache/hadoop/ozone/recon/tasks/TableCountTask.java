@@ -19,7 +19,6 @@
 package org.apache.hadoop.ozone.recon.tasks;
 
 import com.google.inject.Inject;
-import org.apache.commons.lang3.tuple.ImmutablePair;
 import org.apache.commons.lang3.tuple.Pair;
 import org.apache.hadoop.hdds.utils.db.Table;
 import org.apache.hadoop.hdds.utils.db.TableIterator;
@@ -70,11 +69,11 @@ public class TableCountTask implements ReconOmTask {
    * Iterate the rows of each table in OM snapshot DB and calculate the
    * counts for each table.
    *
-   * @param omMetadataManager OM Metadata instance.
-   * @return Pair
+   * @param omMetadataManager Recon OM Metadata instance.
+   * @return ReconTaskResult
    */
   @Override
-  public Pair<String, Boolean> reprocess(OMMetadataManager omMetadataManager) {
+  public ReconTaskResult reprocess(ReconOMMetadataManager omMetadataManager) {
     HashMap<String, Long> objectCountMap = initializeCountMap();
     for (String tableName : getTaskTables()) {
       Table table = omMetadataManager.getTable(tableName);
@@ -83,12 +82,13 @@ public class TableCountTask implements ReconOmTask {
         objectCountMap.put(getRowKeyFromTable(tableName), count);
       } catch (IOException ioEx) {
         LOG.error("Unable to populate Table Count in Recon DB.", ioEx);
-        return new ImmutablePair<>(getTaskName(), false);
+        //TODO how to get where we failed during reprocess?
+        return new ReconTaskResult(getTaskName(), false, omMetadataManager.getLastSequenceNumberFromDB());
       }
     }
     writeCountsToDB(objectCountMap);
     LOG.info("Completed a 'reprocess' run of TableCountTask.");
-    return new ImmutablePair<>(getTaskName(), true);
+    return new ReconTaskResult(getTaskName(), true, omMetadataManager.getLastSequenceNumberFromDB());
   }
 
   private long getCount(Iterator iterator) {
@@ -117,13 +117,15 @@ public class TableCountTask implements ReconOmTask {
    * @return Pair
    */
   @Override
-  public Pair<String, Boolean> process(OMUpdateEventBatch events) {
+  public ReconTaskResult process(OMUpdateEventBatch events) {
     Iterator<OMDBUpdateEvent> eventIterator = events.getIterator();
     HashMap<String, Long> objectCountMap = initializeCountMap();
     final Collection<String> taskTables = getTaskTables();
+    Long currentSequenceNumber = null;
 
     while (eventIterator.hasNext()) {
       OMDBUpdateEvent<String, Object> omdbUpdateEvent = eventIterator.next();
+      currentSequenceNumber = omdbUpdateEvent.getSequenceNumber();
       // Filter event inside process method to avoid duping
       if (!taskTables.contains(omdbUpdateEvent.getTable())) {
         continue;
@@ -152,13 +154,14 @@ public class TableCountTask implements ReconOmTask {
         LOG.error("Unexpected exception while processing the table {}, " +
                 "Action: {}", omdbUpdateEvent.getTable(),
             omdbUpdateEvent.getAction(), e);
-        return new ImmutablePair<>(getTaskName(), false);
+        //TODO first sequence number?
+        return new ReconTaskResult(getTaskName(), false, omdbUpdateEvent.getSequenceNumber()-1);
       }
     }
     writeCountsToDB(objectCountMap);
 
     LOG.info("Completed a 'process' run of TableCountTask.");
-    return new ImmutablePair<>(getTaskName(), true);
+    return new ReconTaskResult(getTaskName(), true, currentSequenceNumber);
   }
 
   private void writeCountsToDB(Map<String, Long> objectCountMap) {

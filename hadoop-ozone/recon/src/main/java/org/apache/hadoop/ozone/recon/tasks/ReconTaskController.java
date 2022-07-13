@@ -41,7 +41,7 @@ public interface ReconTaskController {
    * @throws InterruptedException InterruptedException
    */
   void consumeOMEvents(OMUpdateEventBatch events,
-                       OMMetadataManager omMetadataManager)
+                       ReconOMMetadataManager omMetadataManager)
       throws InterruptedException;
 
   /**

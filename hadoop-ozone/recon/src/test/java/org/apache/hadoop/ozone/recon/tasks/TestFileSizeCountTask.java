@@ -25,6 +25,7 @@ import org.apache.hadoop.ozone.om.helpers.BucketLayout;
 import org.apache.hadoop.ozone.om.helpers.OmKeyInfo;
 import org.apache.hadoop.hdds.utils.db.TypedTable;
 import org.apache.hadoop.ozone.recon.persistence.AbstractReconSqlDBTest;
+import org.apache.hadoop.ozone.recon.recovery.ReconOMMetadataManager;
 import org.apache.hadoop.ozone.recon.tasks.OMDBUpdateEvent.OMUpdateEventBuilder;
 import org.hadoop.ozone.recon.schema.UtilizationSchemaDefinition;
 import org.hadoop.ozone.recon.schema.tables.daos.FileCountBySizeDao;
@@ -92,7 +93,7 @@ public class TestFileSizeCountTask extends AbstractReconSqlDBTest {
     given(omKeyInfo3.getBucketName()).willReturn("bucket1");
     given(omKeyInfo3.getDataSize()).willReturn(1125899906842624L * 4); // 4PB
 
-    OMMetadataManager omMetadataManager = mock(OmMetadataManagerImpl.class);
+    ReconOMMetadataManager omMetadataManager = mock(ReconOMMetadataManager.class);
     TypedTable<String, OmKeyInfo> keyTable = mock(TypedTable.class);
 
     TypedTable.TypedTableIterator mockKeyIter = mock(TypedTable
@@ -118,9 +119,9 @@ public class TestFileSizeCountTask extends AbstractReconSqlDBTest {
     fileCountBySizeDao.insert(
         new FileCountBySize("vol1", "bucket1", 1024L, 10L));
 
-    Pair<String, Boolean> result =
+    ReconOmTask.ReconTaskResult result =
         fileSizeCountTask.reprocess(omMetadataManager);
-    assertTrue(result.getRight());
+    assertTrue(result.isSuccess());
 
     assertEquals(3, fileCountBySizeDao.count());
     Record3<String, String, Long> recordToFind = dslContext
@@ -266,7 +267,7 @@ public class TestFileSizeCountTask extends AbstractReconSqlDBTest {
     }
     hasNextAnswer.add(false);
 
-    OMMetadataManager omMetadataManager = mock(OmMetadataManagerImpl.class);
+    ReconOMMetadataManager omMetadataManager = mock(ReconOMMetadataManager.class);
     TypedTable<String, OmKeyInfo> keyTable = mock(TypedTable.class);
 
     TypedTable.TypedTableIterator mockKeyIter = mock(TypedTable
@@ -282,9 +283,9 @@ public class TestFileSizeCountTask extends AbstractReconSqlDBTest {
     when(mockKeyValue.getValue())
         .thenAnswer(AdditionalAnswers.returnsElementsOf(omKeyInfoList));
 
-    Pair<String, Boolean> result =
+    ReconOmTask.ReconTaskResult result =
         fileSizeCountTask.reprocess(omMetadataManager);
-    assertTrue(result.getRight());
+    assertTrue(result.isSuccess());
 
     // 2 volumes * 500 buckets * 42 bins = 42000 rows
     assertEquals(42000, fileCountBySizeDao.count());

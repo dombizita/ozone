@@ -84,7 +84,7 @@ public class TestTableCountTask extends AbstractReconSqlDBTest {
 
   @Test
   public void testReprocess() {
-    OMMetadataManager omMetadataManager = mock(OmMetadataManagerImpl.class);
+    ReconOMMetadataManager omMetadataManager = mock(ReconOMMetadataManager.class);
     // Mock 5 rows in each table and test the count
     for (String tableName: tableCountTask.getTaskTables()) {
       TypedTable<String, Object> table = mock(TypedTable.class);
@@ -101,8 +101,8 @@ public class TestTableCountTask extends AbstractReconSqlDBTest {
           .thenReturn(false);
     }
 
-    Pair<String, Boolean> result = tableCountTask.reprocess(omMetadataManager);
-    assertTrue(result.getRight());
+    ReconOmTask.ReconTaskResult result = tableCountTask.reprocess(omMetadataManager);
+    assertTrue(result.isSuccess());
 
     assertEquals(5L, getCountForTable(KEY_TABLE));
     assertEquals(5L, getCountForTable(VOLUME_TABLE));

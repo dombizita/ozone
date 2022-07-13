@@ -33,15 +33,13 @@ import java.util.List;
 import java.util.Map;
 import java.util.Set;
 
-import org.apache.commons.lang3.tuple.ImmutablePair;
-import org.apache.commons.lang3.tuple.Pair;
 import org.apache.hadoop.hdds.utils.db.RDBBatchOperation;
-import org.apache.hadoop.ozone.om.OMMetadataManager;
 import org.apache.hadoop.ozone.om.helpers.BucketLayout;
 import org.apache.hadoop.ozone.om.helpers.OmKeyInfo;
 import org.apache.hadoop.ozone.om.helpers.OmKeyLocationInfo;
 import org.apache.hadoop.ozone.om.helpers.OmKeyLocationInfoGroup;
 import org.apache.hadoop.ozone.recon.api.types.ContainerKeyPrefix;
+import org.apache.hadoop.ozone.recon.recovery.ReconOMMetadataManager;
 import org.apache.hadoop.ozone.recon.spi.ReconContainerMetadataManager;
 import org.apache.hadoop.hdds.utils.db.Table;
 import org.apache.hadoop.hdds.utils.db.TableIterator;
@@ -72,7 +70,7 @@ public class ContainerKeyMapperTask implements ReconOmTask {
    * (container, key) -> count to Recon Container DB.
    */
   @Override
-  public Pair<String, Boolean> reprocess(OMMetadataManager omMetadataManager) {
+  public ReconTaskResult reprocess(ReconOMMetadataManager omMetadataManager) {
     long omKeyCount = 0;
     // Maps the (container, key) -> count
     Map<ContainerKeyPrefix, Integer> containerKeyMap = new HashMap<>();
@@ -109,15 +107,16 @@ public class ContainerKeyMapperTask implements ReconOmTask {
     } catch (IOException ioEx) {
       LOG.error("Unable to populate Container Key Prefix data in Recon DB. ",
           ioEx);
-      return new ImmutablePair<>(getTaskName(), false);
+      //TODO how to get where we failed during reprocess?
+      return new ReconTaskResult(getTaskName(), false, -1L);
     }
     try {
       writeToTheDB(containerKeyMap, containerKeyCountMap, deletedKeyCountList);
     } catch (IOException e) {
       LOG.error("Unable to write Container Key Prefix data in Recon DB.", e);
-      return new ImmutablePair<>(getTaskName(), false);
+      return new ReconTaskResult(getTaskName(), false, -1L);
     }
-    return new ImmutablePair<>(getTaskName(), true);
+    return new ReconTaskResult(getTaskName(), true, omMetadataManager.getLastSequenceNumberFromDB());
   }
 
   @Override
@@ -130,16 +129,18 @@ public class ContainerKeyMapperTask implements ReconOmTask {
   }
 
   @Override
-  public Pair<String, Boolean> process(OMUpdateEventBatch events) {
+  public ReconTaskResult process(OMUpdateEventBatch events) {
     Iterator<OMDBUpdateEvent> eventIterator = events.getIterator();
     int eventCount = 0;
     final Collection<String> taskTables = getTaskTables();
     Map<ContainerKeyPrefix, Integer> containerKeyMap = new HashMap<>();
     Map<Long, Long> containerKeyCountMap = new HashMap<>();
     List<ContainerKeyPrefix> deletedKeyCountList = new ArrayList<>();
+    Long currentSequenceNumber = null;
 
     while (eventIterator.hasNext()) {
       OMDBUpdateEvent<String, OmKeyInfo> omdbUpdateEvent = eventIterator.next();
+      currentSequenceNumber = omdbUpdateEvent.getSequenceNumber();
       // Filter event inside process method to avoid duping
       if (!taskTables.contains(omdbUpdateEvent.getTable())) {
         continue;
@@ -178,18 +179,18 @@ public class ContainerKeyMapperTask implements ReconOmTask {
       } catch (IOException e) {
         LOG.error("Unexpected exception while updating key data : {} ",
             updatedKey, e);
-        return new ImmutablePair<>(getTaskName(), false);
+        return new ReconTaskResult(getTaskName(), false, -1L);
       }
     }
     try {
       writeToTheDB(containerKeyMap, containerKeyCountMap, deletedKeyCountList);
     } catch (IOException e) {
       LOG.error("Unable to write Container Key Prefix data in Recon DB.", e);
-      return new ImmutablePair<>(getTaskName(), false);
+      return new ReconTaskResult(getTaskName(), false, -1L);
     }
     LOG.info("{} successfully processed {} OM DB update event(s).",
         getTaskName(), eventCount);
-    return new ImmutablePair<>(getTaskName(), true);
+    return new ReconTaskResult(getTaskName(), true, currentSequenceNumber);
   }
 
   private void writeToTheDB(Map<ContainerKeyPrefix, Integer> containerKeyMap,

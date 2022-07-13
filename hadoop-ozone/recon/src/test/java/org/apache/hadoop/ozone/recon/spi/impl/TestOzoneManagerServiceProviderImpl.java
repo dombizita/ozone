@@ -397,7 +397,7 @@ public class TestOzoneManagerServiceProviderImpl {
         .thenReturn(reconTaskStatusDaoMock);
     doNothing().when(reconTaskControllerMock)
         .consumeOMEvents(any(OMUpdateEventBatch.class),
-            any(OMMetadataManager.class));
+            any(ReconOMMetadataManager.class));
 
     OzoneManagerServiceProviderImpl ozoneManagerServiceProvider =
         new OzoneManagerServiceProviderImpl(configuration, omMetadataManager,
@@ -416,7 +416,7 @@ public class TestOzoneManagerServiceProviderImpl {
 
     verify(reconTaskControllerMock, times(1))
         .consumeOMEvents(any(OMUpdateEventBatch.class),
-            any(OMMetadataManager.class));
+            any(ReconOMMetadataManager.class));
     assertEquals(0, metrics.getNumSnapshotRequests().value());
   }
 

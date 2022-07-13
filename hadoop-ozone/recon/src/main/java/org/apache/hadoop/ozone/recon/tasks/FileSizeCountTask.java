@@ -19,14 +19,12 @@
 package org.apache.hadoop.ozone.recon.tasks;
 
 import com.google.inject.Inject;
-import org.apache.commons.lang3.tuple.ImmutablePair;
-import org.apache.commons.lang3.tuple.Pair;
-import org.apache.hadoop.ozone.om.OMMetadataManager;
 import org.apache.hadoop.ozone.om.helpers.BucketLayout;
 import org.apache.hadoop.ozone.om.helpers.OmKeyInfo;
 import org.apache.hadoop.hdds.utils.db.Table;
 import org.apache.hadoop.hdds.utils.db.TableIterator;
 import org.apache.hadoop.ozone.recon.ReconUtils;
+import org.apache.hadoop.ozone.recon.recovery.ReconOMMetadataManager;
 import org.hadoop.ozone.recon.schema.UtilizationSchemaDefinition;
 import org.hadoop.ozone.recon.schema.tables.daos.FileCountBySizeDao;
 import org.hadoop.ozone.recon.schema.tables.pojos.FileCountBySize;
@@ -75,7 +73,7 @@ public class FileSizeCountTask implements ReconOmTask {
    * @return Pair
    */
   @Override
-  public Pair<String, Boolean> reprocess(OMMetadataManager omMetadataManager) {
+  public ReconTaskResult reprocess(ReconOMMetadataManager omMetadataManager) {
     Table<String, OmKeyInfo> omKeyInfoTable =
         omMetadataManager.getKeyTable(getBucketLayout());
     Map<FileSizeCountKey, Long> fileSizeCountMap = new HashMap<>();
@@ -87,7 +85,7 @@ public class FileSizeCountTask implements ReconOmTask {
       }
     } catch (IOException ioEx) {
       LOG.error("Unable to populate File Size Count in Recon DB. ", ioEx);
-      return new ImmutablePair<>(getTaskName(), false);
+      return new ReconTaskResult(getTaskName(), false, omMetadataManager.getLastSequenceNumberFromDB());
     }
     // Truncate table before inserting new rows
     int execute = dslContext.delete(FILE_COUNT_BY_SIZE).execute();
@@ -96,7 +94,7 @@ public class FileSizeCountTask implements ReconOmTask {
     writeCountsToDB(true, fileSizeCountMap);
 
     LOG.info("Completed a 'reprocess' run of FileSizeCountTask.");
-    return new ImmutablePair<>(getTaskName(), true);
+    return new ReconTaskResult(getTaskName(), true, omMetadataManager.getLastSequenceNumberFromDB());
   }
 
   @Override
@@ -116,10 +114,11 @@ public class FileSizeCountTask implements ReconOmTask {
    * @return Pair
    */
   @Override
-  public Pair<String, Boolean> process(OMUpdateEventBatch events) {
+  public ReconTaskResult process(OMUpdateEventBatch events) {
     Iterator<OMDBUpdateEvent> eventIterator = events.getIterator();
     Map<FileSizeCountKey, Long> fileSizeCountMap = new HashMap<>();
     final Collection<String> taskTables = getTaskTables();
+    Long currentSequenceNumber = null;
 
     while (eventIterator.hasNext()) {
       OMDBUpdateEvent<String, OmKeyInfo> omdbUpdateEvent = eventIterator.next();
@@ -129,6 +128,7 @@ public class FileSizeCountTask implements ReconOmTask {
       }
       String updatedKey = omdbUpdateEvent.getKey();
       OmKeyInfo omKeyInfo = omdbUpdateEvent.getValue();
+      currentSequenceNumber = omdbUpdateEvent.getSequenceNumber();
 
       try {
         switch (omdbUpdateEvent.getAction()) {
@@ -152,12 +152,13 @@ public class FileSizeCountTask implements ReconOmTask {
       } catch (Exception e) {
         LOG.error("Unexpected exception while processing key {}.",
                 updatedKey, e);
-        return new ImmutablePair<>(getTaskName(), false);
+        //TODO here we don't have any updates in the db, right?
+        return new ReconTaskResult(getTaskName(), false, omdbUpdateEvent.getSequenceNumber()-1);
       }
     }
     writeCountsToDB(false, fileSizeCountMap);
     LOG.info("Completed a 'process' run of FileSizeCountTask.");
-    return new ImmutablePair<>(getTaskName(), true);
+    return new ReconTaskResult(getTaskName(), true, currentSequenceNumber);
   }
 
   /**

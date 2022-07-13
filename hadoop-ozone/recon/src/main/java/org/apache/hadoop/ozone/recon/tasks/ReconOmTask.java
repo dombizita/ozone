@@ -19,11 +19,14 @@
 package org.apache.hadoop.ozone.recon.tasks;
 
 import org.apache.commons.lang3.tuple.Pair;
+import org.apache.hadoop.hdds.annotation.InterfaceStability;
 import org.apache.hadoop.ozone.om.OMMetadataManager;
+import org.apache.hadoop.ozone.recon.recovery.ReconOMMetadataManager;
 
 /**
  * Interface used to denote a Recon task that needs to act on OM DB events.
  */
+@InterfaceStability.Evolving
 public interface ReconOmTask {
 
   /**
@@ -35,15 +38,50 @@ public interface ReconOmTask {
   /**
    * Process a set of OM events on tables that the task is listening on.
    * @param events Set of events to be processed by the task.
-   * @return Pair of task name -> task success.
+   * @return ReconTaskResult with information about the task.
    */
-  Pair<String, Boolean> process(OMUpdateEventBatch events);
+  ReconTaskResult process(OMUpdateEventBatch events);
 
   /**
-   * Process a  on tables that the task is listening on.
-   * @param omMetadataManager OM Metadata manager instance.
-   * @return Pair of task name -> task success.
+   * Reprocess on tables that the task is listening on.
+   * @param omMetadataManager Recon OM Metadata manager instance.
+   * @return ReconTaskResult with information about the task.
    */
-  Pair<String, Boolean> reprocess(OMMetadataManager omMetadataManager);
+  ReconTaskResult reprocess(ReconOMMetadataManager omMetadataManager);
 
+  class ReconTaskResult {
+    private String taskName;
+    private boolean success;
+    private Long lastProcessedSequenceNumber;
+
+    public ReconTaskResult(String taskName, boolean success, Long lastProcessedSequenceNumber) {
+      this.taskName = taskName;
+      this.success = success;
+      this.lastProcessedSequenceNumber = lastProcessedSequenceNumber;
+    }
+
+    public String getTaskName() {
+      return taskName;
+    }
+
+    public void setTaskName(String taskName) {
+      this.taskName = taskName;
+    }
+
+    public boolean isSuccess() {
+      return success;
+    }
+
+    public void setSuccess(boolean success) {
+      this.success = success;
+    }
+
+    public Long getLastProcessedSequenceNumber() {
+      return lastProcessedSequenceNumber;
+    }
+
+    public void setLastProcessedSequenceNumber(Long lastProcessedSequenceNumber) {
+      this.lastProcessedSequenceNumber = lastProcessedSequenceNumber;
+    }
+  }
 }

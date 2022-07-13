@@ -17,17 +17,15 @@
  */
 
 package org.apache.hadoop.ozone.recon.tasks;
-import org.apache.commons.lang3.tuple.ImmutablePair;
-import org.apache.commons.lang3.tuple.Pair;
 import org.apache.hadoop.hdds.utils.db.RDBBatchOperation;
 import org.apache.hadoop.hdds.utils.db.Table;
 import org.apache.hadoop.hdds.utils.db.TableIterator;
-import org.apache.hadoop.ozone.om.OMMetadataManager;
 import org.apache.hadoop.ozone.om.helpers.OmDirectoryInfo;
 import org.apache.hadoop.ozone.om.helpers.OmKeyInfo;
 import org.apache.hadoop.ozone.om.helpers.WithParentObjectId;
 import org.apache.hadoop.ozone.recon.ReconUtils;
 import org.apache.hadoop.ozone.recon.api.types.NSSummary;
+import org.apache.hadoop.ozone.recon.recovery.ReconOMMetadataManager;
 import org.apache.hadoop.ozone.recon.spi.ReconNamespaceSummaryManager;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -81,10 +79,11 @@ public class NSSummaryTask implements ReconOmTask {
   }
 
   @Override
-  public Pair<String, Boolean> process(OMUpdateEventBatch events) {
+  public ReconTaskResult process(OMUpdateEventBatch events) {
     Iterator<OMDBUpdateEvent> eventIterator = events.getIterator();
     final Collection<String> taskTables = getTaskTables();
     Map<Long, NSSummary> nsSummaryMap = new HashMap<>();
+    Long currentSequenceNumber = null;
 
     while (eventIterator.hasNext()) {
       OMDBUpdateEvent<String, ? extends
@@ -99,6 +98,7 @@ public class NSSummaryTask implements ReconOmTask {
       }
 
       String updatedKey = omdbUpdateEvent.getKey();
+      currentSequenceNumber = omdbUpdateEvent.getSequenceNumber();
 
       try {
         if (updateOnFileTable) {
@@ -167,7 +167,7 @@ public class NSSummaryTask implements ReconOmTask {
       } catch (IOException ioEx) {
         LOG.error("Unable to process Namespace Summary data in Recon DB. ",
                 ioEx);
-        return new ImmutablePair<>(getTaskName(), false);
+        return new ReconTaskResult(getTaskName(), false, -1L);
       }
     }
 
@@ -175,15 +175,15 @@ public class NSSummaryTask implements ReconOmTask {
       writeNSSummariesToDB(nsSummaryMap);
     } catch (IOException e) {
       LOG.error("Unable to write Namespace Summary data in Recon DB.", e);
-      return new ImmutablePair<>(getTaskName(), false);
+      return new ReconTaskResult(getTaskName(), false, -1L);
     }
 
     LOG.info("Completed a process run of NSSummaryTask");
-    return new ImmutablePair<>(getTaskName(), true);
+    return new ReconTaskResult(getTaskName(), true, currentSequenceNumber);
   }
 
   @Override
-  public Pair<String, Boolean> reprocess(OMMetadataManager omMetadataManager) {
+  public ReconTaskResult reprocess(ReconOMMetadataManager omMetadataManager) {
     Map<Long, NSSummary> nsSummaryMap = new HashMap<>();
 
     try {
@@ -215,17 +215,18 @@ public class NSSummaryTask implements ReconOmTask {
     } catch (IOException ioEx) {
       LOG.error("Unable to reprocess Namespace Summary data in Recon DB. ",
               ioEx);
-      return new ImmutablePair<>(getTaskName(), false);
+      //TODO how to get where we failed during reprocess?
+      return new ReconTaskResult(getTaskName(), false, -1L);
     }
 
     try {
       writeNSSummariesToDB(nsSummaryMap);
     } catch (IOException e) {
       LOG.error("Unable to write Namespace Summary data in Recon DB.", e);
-      return new ImmutablePair<>(getTaskName(), false);
+      return new ReconTaskResult(getTaskName(), false, -1L);
     }
     LOG.info("Completed a reprocess run of NSSummaryTask");
-    return new ImmutablePair<>(getTaskName(), true);
+    return new ReconTaskResult(getTaskName(), true, omMetadataManager.getLastSequenceNumberFromDB());
   }
 
   private void writeNSSummariesToDB(Map<Long, NSSummary> nsSummaryMap)

@@ -69,11 +69,13 @@ import org.apache.hadoop.ozone.recon.api.types.PipelinesResponse;
 import org.apache.hadoop.ozone.recon.persistence.AbstractReconSqlDBTest;
 import org.apache.hadoop.ozone.recon.persistence.ContainerHealthSchemaManager;
 import org.apache.hadoop.ozone.recon.recovery.ReconOMMetadataManager;
+import org.apache.hadoop.ozone.recon.recovery.ReconOmMetadataManagerImpl;
 import org.apache.hadoop.ozone.recon.scm.ReconStorageContainerManagerFacade;
 import org.apache.hadoop.ozone.recon.spi.StorageContainerServiceProvider;
 import org.apache.hadoop.ozone.recon.spi.impl.OzoneManagerServiceProviderImpl;
 import org.apache.hadoop.ozone.recon.spi.impl.StorageContainerServiceProviderImpl;
 import org.apache.hadoop.ozone.recon.tasks.FileSizeCountTask;
+import org.apache.hadoop.ozone.recon.tasks.ReconOmTask;
 import org.apache.hadoop.ozone.recon.tasks.TableCountTask;
 import org.apache.ozone.test.GenericTestUtils;
 import org.apache.ozone.test.LambdaTestUtils;
@@ -598,9 +600,9 @@ public class TestEndpoints extends AbstractReconSqlDBTest {
     });
 
     // check volume, bucket and key count after running table count task
-    Pair<String, Boolean> result =
+    ReconOmTask.ReconTaskResult result =
         tableCountTask.reprocess(reconOMMetadataManager);
-    assertTrue(result.getRight());
+    assertTrue(result.isSuccess());
     response = clusterStateEndpoint.getClusterState();
     clusterStateResponse = (ClusterStateResponse) response.getEntity();
     Assertions.assertEquals(2, clusterStateResponse.getVolumes());
@@ -628,7 +630,7 @@ public class TestEndpoints extends AbstractReconSqlDBTest {
     given(omKeyInfo3.getBucketName()).willReturn("bucket1");
     given(omKeyInfo3.getDataSize()).willReturn(1000L);
 
-    OMMetadataManager omMetadataManager = mock(OmMetadataManagerImpl.class);
+    ReconOMMetadataManager omMetadataManager = mock(ReconOmMetadataManagerImpl.class);
     TypedTable<String, OmKeyInfo> keyTable = mock(TypedTable.class);
 
     TypedTable.TypedTableIterator mockKeyIter = mock(TypedTable
@@ -649,9 +651,9 @@ public class TestEndpoints extends AbstractReconSqlDBTest {
         .thenReturn(omKeyInfo2)
         .thenReturn(omKeyInfo3);
 
-    Pair<String, Boolean> result =
+    ReconOmTask.ReconTaskResult result =
         fileSizeCountTask.reprocess(omMetadataManager);
-    assertTrue(result.getRight());
+    assertTrue(result.isSuccess());
 
     assertEquals(3, fileCountBySizeDao.count());
     Response response = utilizationEndpoint.getFileCounts(null, null, 0);

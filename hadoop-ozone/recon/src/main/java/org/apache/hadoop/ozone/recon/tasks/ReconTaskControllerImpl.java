@@ -21,8 +21,10 @@ package org.apache.hadoop.ozone.recon.tasks;
 import static org.apache.hadoop.ozone.recon.ReconServerConfigKeys.OZONE_RECON_TASK_THREAD_COUNT_DEFAULT;
 import static org.apache.hadoop.ozone.recon.ReconServerConfigKeys.OZONE_RECON_TASK_THREAD_COUNT_KEY;
 
+import java.io.IOException;
 import java.util.ArrayList;
 import java.util.Collection;
+import java.util.Collections;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
@@ -36,10 +38,17 @@ import java.util.concurrent.atomic.AtomicInteger;
 
 import org.apache.commons.lang3.tuple.Pair;
 import org.apache.hadoop.hdds.conf.OzoneConfiguration;
+import org.apache.hadoop.hdds.utils.db.RDBStore;
+import org.apache.hadoop.hdds.utils.db.RocksDatabase;
+import org.apache.hadoop.hdds.utils.db.SequenceNumberNotFoundException;
 import org.apache.hadoop.ozone.om.OMMetadataManager;
 import org.apache.hadoop.ozone.recon.recovery.ReconOMMetadataManager;
 import org.hadoop.ozone.recon.schema.tables.daos.ReconTaskStatusDao;
 import org.hadoop.ozone.recon.schema.tables.pojos.ReconTaskStatus;
+import org.rocksdb.RocksDB;
+import org.rocksdb.RocksDBException;
+import org.rocksdb.TransactionLogIterator;
+import org.rocksdb.WriteBatch;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -100,22 +109,28 @@ public class ReconTaskControllerImpl implements ReconTaskController {
    */
   @Override
   public synchronized void consumeOMEvents(OMUpdateEventBatch events,
-                              OMMetadataManager omMetadataManager)
+                              ReconOMMetadataManager omMetadataManager)
       throws InterruptedException {
 
     try {
       if (!events.isEmpty()) {
-        Collection<Callable<Pair<String, Boolean>>> tasks = new ArrayList<>();
+        Collection<Callable<ReconOmTask.ReconTaskResult>> tasks = new ArrayList<>();
         for (Map.Entry<String, ReconOmTask> taskEntry :
             reconOmTasks.entrySet()) {
           ReconOmTask task = taskEntry.getValue();
-          // events passed to process method is no longer filtered
-          tasks.add(() -> task.process(events));
+          Long maxSeqNumber = findMaxSequenceNumber();
+          if(maxSeqNumber < events.getLastSequenceNumber()) {
+            OMUpdateEventBatch eventsNewSeqNumber = getOMEventsFromOMDB(omMetadataManager, maxSeqNumber);
+            tasks.add(() -> task.process(eventsNewSeqNumber));
+          } else {
+            // events passed to process method is no longer filtered
+            tasks.add(() -> task.process(events));
+          }
         }
 
-        List<Future<Pair<String, Boolean>>> results =
+        List<Future<ReconOmTask.ReconTaskResult>> results =
             executorService.invokeAll(tasks);
-        List<String> failedTasks = processTaskResults(results, events);
+        List<String> failedTasks = processTaskResults(results);
 
         // Retry
         List<String> retryFailedTasks = new ArrayList<>();
@@ -123,11 +138,14 @@ public class ReconTaskControllerImpl implements ReconTaskController {
           tasks.clear();
           for (String taskName : failedTasks) {
             ReconOmTask task = reconOmTasks.get(taskName);
+            ReconTaskStatus reconTaskStatus = reconTaskStatusDao.fetchOneByTaskName(task.getTaskName());
+            Long lastUpdatedSequenceNumber = reconTaskStatus.getLastUpdatedSeqNumber();
+            OMUpdateEventBatch eventsNewSeqNumber = getOMEventsFromOMDB(omMetadataManager, lastUpdatedSequenceNumber);
             // events passed to process method is no longer filtered
-            tasks.add(() -> task.process(events));
+            tasks.add(() -> task.process(eventsNewSeqNumber));
           }
           results = executorService.invokeAll(tasks);
-          retryFailedTasks = processTaskResults(results, events);
+          retryFailedTasks = processTaskResults(results);
         }
 
         // Reprocess the failed tasks.
@@ -139,13 +157,49 @@ public class ReconTaskControllerImpl implements ReconTaskController {
           }
           results = executorService.invokeAll(tasks);
           List<String> reprocessFailedTasks =
-              processTaskResults(results, events);
+              processTaskResults(results);
           ignoreFailedTasks(reprocessFailedTasks);
         }
       }
-    } catch (ExecutionException e) {
+    } catch (ExecutionException | RocksDBException | IOException e) {
       LOG.error("Unexpected error : ", e);
     }
+  }
+
+  private Long findMaxSequenceNumber() {
+    List<Long> lastUpdatedSeqNumbers = new ArrayList<>();
+    for (Map.Entry<String, ReconOmTask> taskEntry :
+        reconOmTasks.entrySet()) {
+      ReconOmTask task = taskEntry.getValue();
+      ReconTaskStatus reconTaskStatus = reconTaskStatusDao.fetchOneByTaskName(task.getTaskName());
+      lastUpdatedSeqNumbers.add(reconTaskStatus.getLastUpdatedSeqNumber());
+    }
+    return Collections.max(lastUpdatedSeqNumbers);
+  }
+
+  private OMUpdateEventBatch getOMEventsFromOMDB(OMMetadataManager omMetadataManager, Long sequenceNumber) throws RocksDBException, IOException {
+    RDBStore rdbStore = (RDBStore) omMetadataManager.getStore();
+    RocksDatabase rocksDB = rdbStore.getDb();
+    TransactionLogIterator transactionLogIterator =
+        rocksDB.getUpdatesSince(sequenceNumber);
+    List<byte[]> writeBatches = new ArrayList<>();
+
+    while (transactionLogIterator.isValid()) {
+      TransactionLogIterator.BatchResult result =
+          transactionLogIterator.getBatch();
+      result.writeBatch().markWalTerminationPoint();
+      WriteBatch writeBatch = result.writeBatch();
+      writeBatches.add(writeBatch.data());
+      transactionLogIterator.next();
+    }
+    OMDBUpdatesHandler omdbUpdatesHandler =
+        new OMDBUpdatesHandler(omMetadataManager, sequenceNumber);
+    for (byte[] data : writeBatches) {
+      WriteBatch writeBatch = new WriteBatch(data);
+      writeBatch.iterate(omdbUpdatesHandler);
+    }
+    OMUpdateEventBatch eventsNewSeqNumber = new OMUpdateEventBatch(omdbUpdatesHandler.getEvents());
+    return eventsNewSeqNumber;
   }
 
   /**
@@ -168,17 +222,17 @@ public class ReconTaskControllerImpl implements ReconTaskController {
   public synchronized void reInitializeTasks(
       ReconOMMetadataManager omMetadataManager) throws InterruptedException {
     try {
-      Collection<Callable<Pair<String, Boolean>>> tasks = new ArrayList<>();
+      Collection<Callable<ReconOmTask.ReconTaskResult>> tasks = new ArrayList<>();
       for (Map.Entry<String, ReconOmTask> taskEntry :
           reconOmTasks.entrySet()) {
         ReconOmTask task = taskEntry.getValue();
         tasks.add(() -> task.reprocess(omMetadataManager));
       }
-      List<Future<Pair<String, Boolean>>> results =
+      List<Future<ReconOmTask.ReconTaskResult>> results =
           executorService.invokeAll(tasks);
-      for (Future<Pair<String, Boolean>> f : results) {
-        String taskName = f.get().getLeft();
-        if (!f.get().getRight()) {
+      for (Future<ReconOmTask.ReconTaskResult> f : results) {
+        String taskName = f.get().getTaskName();
+        if (!f.get().isSuccess()) {
           LOG.info("Init failed for task {}.", taskName);
         } else {
           //store the timestamp for the task
@@ -233,24 +287,23 @@ public class ReconTaskControllerImpl implements ReconTaskController {
   /**
    * Wait on results of all tasks.
    * @param results Set of Futures.
-   * @param events Events.
    * @return List of failed task names
    * @throws ExecutionException execution Exception
    * @throws InterruptedException Interrupted Exception
    */
-  private List<String> processTaskResults(List<Future<Pair<String, Boolean>>>
-                                              results,
-                                          OMUpdateEventBatch events)
+  private List<String> processTaskResults(List<Future<ReconOmTask.ReconTaskResult>>
+                                              results)
       throws ExecutionException, InterruptedException {
     List<String> failedTasks = new ArrayList<>();
-    for (Future<Pair<String, Boolean>> f : results) {
-      String taskName = f.get().getLeft();
-      if (!f.get().getRight()) {
+    for (Future<ReconOmTask.ReconTaskResult> f : results) {
+      String taskName = f.get().getTaskName();
+      if (!f.get().isSuccess()) {
         LOG.info("Failed task : {}", taskName);
-        failedTasks.add(f.get().getLeft());
+        storeLastCompletedTransaction(taskName, f.get().getLastProcessedSequenceNumber());
+        failedTasks.add(taskName);
       } else {
         taskFailureCounter.get(taskName).set(0);
-        storeLastCompletedTransaction(taskName, events.getLastSequenceNumber());
+        storeLastCompletedTransaction(taskName, f.get().getLastProcessedSequenceNumber());
       }
     }
     return failedTasks;

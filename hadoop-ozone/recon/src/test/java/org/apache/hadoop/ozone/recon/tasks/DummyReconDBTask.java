@@ -24,6 +24,7 @@ import java.util.Collections;
 import org.apache.commons.lang3.tuple.ImmutablePair;
 import org.apache.commons.lang3.tuple.Pair;
 import org.apache.hadoop.ozone.om.OMMetadataManager;
+import org.apache.hadoop.ozone.recon.recovery.ReconOMMetadataManager;
 
 /**
  * Dummy Recon task that has 3 modes of operations.
@@ -54,20 +55,20 @@ public class DummyReconDBTask implements ReconOmTask {
   }
 
   @Override
-  public Pair<String, Boolean> process(OMUpdateEventBatch events) {
+  public ReconTaskResult process(OMUpdateEventBatch events) {
     if (++callCtr <= numFailuresAllowed) {
-      return new ImmutablePair<>(getTaskName(), false);
+      return new ReconTaskResult(getTaskName(), true, events.getLastSequenceNumber());
     } else {
-      return new ImmutablePair<>(getTaskName(), true);
+      return new ReconTaskResult(getTaskName(), false, events.getLastSequenceNumber()-1);
     }
   }
 
   @Override
-  public Pair<String, Boolean> reprocess(OMMetadataManager omMetadataManager) {
+  public ReconTaskResult reprocess(ReconOMMetadataManager omMetadataManager) {
     if (++callCtr <= numFailuresAllowed) {
-      return new ImmutablePair<>(getTaskName(), false);
+      return new ReconTaskResult(getTaskName(), false, -1L);
     } else {
-      return new ImmutablePair<>(getTaskName(), true);
+      return new ReconTaskResult(getTaskName(), true, omMetadataManager.getLastSequenceNumberFromDB());
     }
   }
 
