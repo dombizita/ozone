@@ -220,10 +220,8 @@ public class FileSizeCountTask implements ReconOmTask {
    */
   private void handlePutKeyEvent(OmKeyInfo omKeyInfo,
                                  Map<FileSizeCountKey, Long> fileSizeCountMap) {
-    FileSizeCountKey key = getFileSizeCountKey(omKeyInfo);
-    Long count = fileSizeCountMap.containsKey(key) ?
-        fileSizeCountMap.get(key) + 1L : 1L;
-    fileSizeCountMap.put(key, count);
+    fileSizeCountMap.computeIfPresent(getFileSizeCountKey(omKeyInfo),
+        (k, oldCount) -> oldCount != null ? oldCount + 1 : 1);
   }
 
   private BucketLayout getBucketLayout() {
@@ -244,10 +242,8 @@ public class FileSizeCountTask implements ReconOmTask {
       LOG.warn("Deleting a key not found while handling DELETE key event. Key" +
           " not found in Recon OM DB : {}", key);
     } else {
-      FileSizeCountKey countKey = getFileSizeCountKey(omKeyInfo);
-      Long count = fileSizeCountMap.containsKey(countKey) ?
-          fileSizeCountMap.get(countKey) - 1L : -1L;
-      fileSizeCountMap.put(countKey, count);
+      fileSizeCountMap.computeIfPresent(getFileSizeCountKey(omKeyInfo),
+          (k, oldCount) -> oldCount != null ? oldCount - 1 : -1);
     }
   }
 

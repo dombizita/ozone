@@ -112,7 +112,7 @@ public class TestOMDBUpdatesHandler {
         .put("/sampleVol/bucketOne/key_two", secondKey);
 
     List<byte[]> writeBatches = getBytesFromOmMetaManager(0);
-    OMDBUpdatesHandler omdbUpdatesHandler = captureEvents(writeBatches);
+    OMDBUpdatesHandler omdbUpdatesHandler = captureEvents(writeBatches, 0);
 
     List<OMDBUpdateEvent> events = omdbUpdatesHandler.getEvents();
     assertEquals(3, events.size());
@@ -168,7 +168,7 @@ public class TestOMDBUpdatesHandler {
         .delete(omMetadataManager.getVolumeKey("nonExistingVolume"));
 
     List<byte[]> writeBatches = getBytesFromOmMetaManager(3);
-    OMDBUpdatesHandler omdbUpdatesHandler = captureEvents(writeBatches);
+    OMDBUpdatesHandler omdbUpdatesHandler = captureEvents(writeBatches, 3);
 
     List<OMDBUpdateEvent> events = omdbUpdatesHandler.getEvents();
     assertEquals(4, events.size());
@@ -231,7 +231,7 @@ public class TestOMDBUpdatesHandler {
         .put("/sampleVol/bucketOne/key", keyNewValue2);
 
     List<byte[]> writeBatches = getBytesFromOmMetaManager(0);
-    OMDBUpdatesHandler omdbUpdatesHandler = captureEvents(writeBatches);
+    OMDBUpdatesHandler omdbUpdatesHandler = captureEvents(writeBatches, 0);
 
     List<OMDBUpdateEvent> events = omdbUpdatesHandler.getEvents();
     assertEquals(7, events.size());
@@ -329,10 +329,11 @@ public class TestOMDBUpdatesHandler {
   }
 
   @NotNull
-  private OMDBUpdatesHandler captureEvents(List<byte[]> writeBatches)
+  private OMDBUpdatesHandler captureEvents(List<byte[]> writeBatches,
+                                           long sequenceNumber)
       throws RocksDBException {
     OMDBUpdatesHandler omdbUpdatesHandler =
-        new OMDBUpdatesHandler(reconOmMetadataManager);
+        new OMDBUpdatesHandler(reconOmMetadataManager, sequenceNumber);
     for (byte[] data : writeBatches) {
       WriteBatch writeBatch = new WriteBatch(data);
       // Capture the events from source DB.

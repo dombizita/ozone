@@ -149,7 +149,7 @@ public class ReconTaskControllerImpl implements ReconTaskController {
   }
 
   /**
-   * Ignore tasks that failed reprocess step more than threshold times.
+   * Ignore tasks that failed reprgit ocess step more than threshold times.
    * @param failedTasks list of failed tasks.
    */
   private void ignoreFailedTasks(List<String> failedTasks) {

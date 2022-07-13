@@ -244,7 +244,7 @@ public class TestOzoneManagerServiceProviderImpl {
             getMockOzoneManagerClient(dbUpdatesWrapper));
 
     OMDBUpdatesHandler updatesHandler =
-        new OMDBUpdatesHandler(omMetadataManager);
+        new OMDBUpdatesHandler(omMetadataManager, 0);
     ozoneManagerServiceProvider.getAndApplyDeltaUpdatesFromOM(
         0L, updatesHandler);
 
@@ -314,7 +314,7 @@ public class TestOzoneManagerServiceProviderImpl {
                 dbUpdatesWrapper[1], dbUpdatesWrapper[2], dbUpdatesWrapper[3]));
 
     OMDBUpdatesHandler updatesHandler =
-        new OMDBUpdatesHandler(omMetadataManager);
+        new OMDBUpdatesHandler(omMetadataManager, 0);
     ozoneManagerServiceProvider.getAndApplyDeltaUpdatesFromOM(
         0L, updatesHandler);
 

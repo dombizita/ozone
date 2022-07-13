@@ -53,12 +53,15 @@ public class OMDBUpdatesHandler extends WriteBatch.Handler {
   private Map<String, OMDBUpdateEvent> omdbLatestUpdateEvents
       = new HashMap<>();
   private OMDBDefinition omdbDefinition;
+  private long sequenceNumber;
 
-  public OMDBUpdatesHandler(OMMetadataManager metadataManager) {
+  public OMDBUpdatesHandler(OMMetadataManager metadataManager,
+      long startSequenceNumber) {
     omMetadataManager = metadataManager;
     tablesNames = metadataManager.getStore().getTableNames();
     codecRegistry = metadataManager.getStore().getCodecRegistry();
     omdbDefinition = new OMDBDefinition();
+    sequenceNumber = startSequenceNumber;
   }
 
   @Override
@@ -102,6 +105,7 @@ public class OMDBUpdatesHandler extends WriteBatch.Handler {
       builder.setAction(action);
       String key = (String) codecRegistry.asObject(keyBytes, keyType.get());
       builder.setKey(key);
+      builder.setSequenceNumber(++sequenceNumber);
 
       // Put new
       // Put existing --> Update

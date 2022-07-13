@@ -452,7 +452,7 @@ public class OzoneManagerServiceProviderImpl
       fullSnapshot = true;
     } else {
       try (OMDBUpdatesHandler omdbUpdatesHandler =
-               new OMDBUpdatesHandler(omMetadataManager)) {
+               new OMDBUpdatesHandler(omMetadataManager, currentSequenceNumber)) {
         LOG.info("Obtaining delta updates from Ozone Manager");
         // Get updates from OM and apply to local Recon OM DB.
         getAndApplyDeltaUpdatesFromOM(currentSequenceNumber,
