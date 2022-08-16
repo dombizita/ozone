@@ -774,6 +774,7 @@ public class ContainerStateMachine extends BaseStateMachine {
   @Override
   public CompletableFuture<Message> applyTransaction(TransactionContext trx) {
     long index = trx.getLogEntry().getIndex();
+    LOG.debug("gid {} : ApplyTransaction started. logIndex {}", gid, index);
     try {
       // Remove the stateMachine data once both followers have caught up. If any
       // one of the follower is behind, the pending queue will max out as

@@ -171,7 +171,7 @@ export OZONE_OS_TYPE=${OZONE_OS_TYPE:-$(uname -s)}
 
 # Default log4j setting for interactive commands
 # Java property: hadoop.root.logger
-# export OZONE_ROOT_LOGGER=INFO,console
+export OZONE_ROOT_LOGGER=TRACE,console
 
 # Default log4j setting for daemons spawned explicitly by
 # --daemon option of ozone command.
