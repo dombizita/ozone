@@ -119,11 +119,11 @@ public class TestReconTaskControllerImpl extends AbstractReconSqlDBTest {
     reconTaskStatusDao = getDao(ReconTaskStatusDao.class);
     ReconTaskStatus dbRecord = reconTaskStatusDao.findById(taskName);
 
-    Assert.assertEquals(taskName, dbRecord.getTaskName());
-    Assert.assertTrue(
+    assertEquals(taskName, dbRecord.getTaskName());
+    assertTrue(
         dbRecord.getLastUpdatedTimestamp() > currentTime);
 
-    Assert.assertEquals(Long.valueOf(100L), dbRecord.getLastUpdatedSeqNumber());
+    assertEquals(Long.valueOf(100L), dbRecord.getLastUpdatedSeqNumber());
   }
 
   @Test
