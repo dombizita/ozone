@@ -17,16 +17,16 @@
  */
 package org.apache.hadoop.ozone.recon.persistence;
 
-import static org.hadoop.ozone.recon.schema.ContainerSchemaDefinition.UnHealthyContainerStates.UNDER_REPLICATED;
-import static org.hadoop.ozone.recon.schema.ContainerSchemaDefinition.UnHealthyContainerStates.ALL_REPLICAS_UNHEALTHY;
 import static org.hadoop.ozone.recon.schema.tables.UnhealthyContainersTable.UNHEALTHY_CONTAINERS;
 import static org.jooq.impl.DSL.count;
 
 import com.google.inject.Inject;
 import com.google.inject.Singleton;
 import org.apache.hadoop.ozone.recon.api.types.UnhealthyContainersSummary;
+import org.hadoop.ozone.recon.schema.ContainerReplicaSchemaDefinition;
 import org.hadoop.ozone.recon.schema.ContainerSchemaDefinition;
 import org.hadoop.ozone.recon.schema.ContainerSchemaDefinition.UnHealthyContainerStates;
+import org.hadoop.ozone.recon.schema.tables.daos.UnhealthyReplicasDao;
 import org.hadoop.ozone.recon.schema.tables.daos.UnhealthyContainersDao;
 import org.hadoop.ozone.recon.schema.tables.pojos.UnhealthyContainers;
 import org.hadoop.ozone.recon.schema.tables.records.UnhealthyContainersRecord;
@@ -43,14 +43,21 @@ import java.util.List;
 public class ContainerHealthSchemaManager {
 
   private final UnhealthyContainersDao unhealthyContainersDao;
+  private final UnhealthyReplicasDao unhealthyReplicasDao;
   private final ContainerSchemaDefinition containerSchemaDefinition;
+  private final ContainerReplicaSchemaDefinition
+      containerReplicaSchemaDefinition;
 
   @Inject
   public ContainerHealthSchemaManager(
       ContainerSchemaDefinition containerSchemaDefinition,
-      UnhealthyContainersDao unhealthyContainersDao) {
+      UnhealthyContainersDao unhealthyContainersDao,
+      UnhealthyReplicasDao unhealthyReplicasDao,
+      ContainerReplicaSchemaDefinition containerReplicaSchemaDefinition) {
     this.unhealthyContainersDao = unhealthyContainersDao;
     this.containerSchemaDefinition = containerSchemaDefinition;
+    this.unhealthyReplicasDao = unhealthyReplicasDao;
+    this.containerReplicaSchemaDefinition = containerReplicaSchemaDefinition;
   }
 
   /**
@@ -71,14 +78,8 @@ public class ContainerHealthSchemaManager {
     SelectQuery<Record> query = dslContext.selectQuery();
     query.addFrom(UNHEALTHY_CONTAINERS);
     if (state != null) {
-      if (state.equals(ALL_REPLICAS_UNHEALTHY)) {
-        query.addConditions(UNHEALTHY_CONTAINERS.CONTAINER_STATE
-            .eq(UNDER_REPLICATED.toString()));
-        query.addConditions(UNHEALTHY_CONTAINERS.ACTUAL_REPLICA_COUNT.eq(0));
-      } else {
-        query.addConditions(
-            UNHEALTHY_CONTAINERS.CONTAINER_STATE.eq(state.toString()));
-      }
+      query.addConditions(
+          UNHEALTHY_CONTAINERS.CONTAINER_STATE.eq(state.toString()));
     }
     query.addOrderBy(UNHEALTHY_CONTAINERS.CONTAINER_ID.asc(),
         UNHEALTHY_CONTAINERS.CONTAINER_STATE.asc());
@@ -115,5 +116,4 @@ public class ContainerHealthSchemaManager {
   public void insertUnhealthyContainerRecords(List<UnhealthyContainers> recs) {
     unhealthyContainersDao.insert(recs);
   }
-
 }

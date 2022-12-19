@@ -759,7 +759,7 @@ public class KeyValueContainer implements Container<KeyValueContainerData> {
   }
 
   /**
-   * Returns KeyValueContainerReport for the KeyValueContainer.
+   * Returns ContainerReplicaProto for the KeyValueContainer.
    */
   @Override
   public ContainerReplicaProto getContainerReport()

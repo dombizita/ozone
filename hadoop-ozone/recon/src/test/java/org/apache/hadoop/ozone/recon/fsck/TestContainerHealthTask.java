@@ -51,10 +51,12 @@ import org.apache.hadoop.ozone.recon.scm.ReconStorageContainerManagerFacade;
 import org.apache.hadoop.ozone.recon.spi.StorageContainerServiceProvider;
 import org.apache.hadoop.ozone.recon.tasks.ReconTaskConfig;
 import org.apache.ozone.test.LambdaTestUtils;
+import org.hadoop.ozone.recon.schema.ContainerReplicaSchemaDefinition;
 import org.hadoop.ozone.recon.schema.ContainerSchemaDefinition;
 import org.apache.hadoop.ozone.recon.persistence.AbstractReconSqlDBTest;
 import org.hadoop.ozone.recon.schema.tables.daos.ReconTaskStatusDao;
 import org.hadoop.ozone.recon.schema.tables.daos.UnhealthyContainersDao;
+import org.hadoop.ozone.recon.schema.tables.daos.UnhealthyReplicasDao;
 import org.hadoop.ozone.recon.schema.tables.pojos.ReconTaskStatus;
 import org.hadoop.ozone.recon.schema.tables.pojos.UnhealthyContainers;
 import org.junit.jupiter.api.Assertions;
@@ -70,11 +72,13 @@ public class TestContainerHealthTask extends AbstractReconSqlDBTest {
   public void testRun() throws Exception {
     UnhealthyContainersDao unHealthyContainersTableHandle =
         getDao(UnhealthyContainersDao.class);
+    UnhealthyReplicasDao unhealthyReplicasDao
+        = getDao(UnhealthyReplicasDao.class);
 
     ContainerHealthSchemaManager containerHealthSchemaManager =
         new ContainerHealthSchemaManager(
             getSchemaDefinition(ContainerSchemaDefinition.class),
-            unHealthyContainersTableHandle);
+            unHealthyContainersTableHandle, unhealthyReplicasDao, getSchemaDefinition(ContainerReplicaSchemaDefinition.class));
     ReconStorageContainerManagerFacade scmMock =
         mock(ReconStorageContainerManagerFacade.class);
     MockPlacementPolicy placementMock = new MockPlacementPolicy();
@@ -231,11 +235,13 @@ public class TestContainerHealthTask extends AbstractReconSqlDBTest {
   public void testDeletedContainer() throws Exception {
     UnhealthyContainersDao unHealthyContainersTableHandle =
         getDao(UnhealthyContainersDao.class);
+    UnhealthyReplicasDao unhealthyContainerReplicasDao =
+        getDao(UnhealthyReplicasDao.class);
 
     ContainerHealthSchemaManager containerHealthSchemaManager =
         new ContainerHealthSchemaManager(
             getSchemaDefinition(ContainerSchemaDefinition.class),
-            unHealthyContainersTableHandle);
+            unHealthyContainersTableHandle, unhealthyContainerReplicasDao, getSchemaDefinition(ContainerReplicaSchemaDefinition.class));
     ReconStorageContainerManagerFacade scmMock =
         mock(ReconStorageContainerManagerFacade.class);
     MockPlacementPolicy placementMock = new MockPlacementPolicy();

@@ -178,6 +178,13 @@ public class ReconContainerManager extends ContainerManagerImpl {
         }
       }
     }
+
+
+    // TODO: Check if the container replica report from the DATANODE has state
+    //  ContainerReplicaProto.State.UNHEALTHY.
+    //  If so, mark it in Recon in-memory structure or DB somehow of that
+    //  replica. And eventually if all replicas are UNHEALTHY, add it to
+    //  ALL_REPLICAS_UNHEALTHY.
   }
 
   /**
