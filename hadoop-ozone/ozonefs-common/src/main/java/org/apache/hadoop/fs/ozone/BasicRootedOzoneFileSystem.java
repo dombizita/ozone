@@ -80,6 +80,8 @@ import static org.apache.hadoop.ozone.OzoneConfigKeys.OZONE_FS_LISTING_PAGE_SIZE
 import static org.apache.hadoop.ozone.OzoneConfigKeys.OZONE_FS_MAX_LISTING_PAGE_SIZE;
 import static org.apache.hadoop.ozone.OzoneConfigKeys.OZONE_SCM_BLOCK_SIZE;
 import static org.apache.hadoop.ozone.OzoneConfigKeys.OZONE_SCM_BLOCK_SIZE_DEFAULT;
+import static org.apache.hadoop.ozone.OzoneConfigKeys.OZONE_USER_HOME_PREFIX;
+import static org.apache.hadoop.ozone.OzoneConfigKeys.OZONE_USER_HOME_PREFIX_DEFAULT;
 import static org.apache.hadoop.ozone.OzoneConsts.OM_SNAPSHOT_INDICATOR;
 import static org.apache.hadoop.ozone.OzoneConsts.OZONE_URI_DELIMITER;
 import static org.apache.hadoop.ozone.OzoneConsts.OZONE_OFS_URI_SCHEME;
@@ -1525,6 +1527,45 @@ public class BasicRootedOzoneFileSystem extends FileSystem {
    */
   public boolean recoverLease(final Path f) throws IOException {
     return adapterImpl.recoverLease(f);
+  }
+
+  @Override
+  public Path getHomeDirectory() {
+    String userHomePrefix = getConfSource()
+        .get(OZONE_USER_HOME_PREFIX, OZONE_USER_HOME_PREFIX_DEFAULT);
+
+    Path userHomePrefixPath = new Path(userHomePrefix);
+
+    // check if the user home prefix exists
+    try {
+       if (!exists(userHomePrefixPath)) {
+         // if user home prefix doesn't exist, return with root
+         return new Path("/");
+       }
+    } catch (IOException e) {
+      LOG.error("Can't access user home prefix");
+    }
+
+    String username;
+    try {
+      username = UserGroupInformation.getCurrentUser().getShortUserName();
+    } catch (IOException e) {
+      username = OZONE_DEFAULT_USER;
+    }
+
+    Path userHomePath = new Path(userHomePrefix + "/" + username);
+
+    // check if the user home exists
+    try {
+      if (!exists(userHomePath)) {
+        // if user home doesn't exist, return with root
+        return new Path("/");
+      }
+    } catch (IOException e) {
+      LOG.error("Can't access user home");
+    }
+
+    return userHomePath;
   }
 
 }
