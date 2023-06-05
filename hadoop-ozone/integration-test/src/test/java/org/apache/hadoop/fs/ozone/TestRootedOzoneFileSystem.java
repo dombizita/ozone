@@ -117,6 +117,7 @@ import static org.apache.hadoop.fs.ozone.Constants.LISTING_PAGE_SIZE;
 import static org.apache.hadoop.hdds.client.ECReplicationConfig.EcCodec.RS;
 import static org.apache.hadoop.ozone.OzoneAcl.AclScope.ACCESS;
 import static org.apache.hadoop.ozone.OzoneConfigKeys.OZONE_FS_ITERATE_BATCH_SIZE;
+import static org.apache.hadoop.ozone.OzoneConfigKeys.OZONE_USER_HOME_PREFIX;
 import static org.apache.hadoop.ozone.OzoneConsts.OZONE_URI_DELIMITER;
 import static org.apache.hadoop.ozone.om.OMConfigKeys.OZONE_OM_ADDRESS_KEY;
 import static org.apache.hadoop.ozone.om.OMConfigKeys.OZONE_OM_ENABLE_OFS_SHARED_TMP_DIR;
@@ -2515,5 +2516,30 @@ public class TestRootedOzoneFileSystem {
     LambdaTestUtils.intercept(IllegalArgumentException.class, errorMsg,
         () -> ofs.getSnapshotDiffReport(volumePath1, finalFromSnap,
             finalToSnap));
+  }
+
+  @Test
+  public void testUserHomeDirectory() throws IOException {
+    Path root = new Path("/");
+    Path userHome = fs.getHomeDirectory();
+    Assert.assertEquals(root, userHome);
+
+    String username = UserGroupInformation.getCurrentUser().getShortUserName();
+    Path userHomePath = new Path("/user/" + username);
+    userHome = fs.getHomeDirectory();
+    Assert.assertEquals(root, userHome);
+
+    fs.mkdirs(userHomePath);
+    userHome = fs.getHomeDirectory();
+    Assert.assertEquals(userHomePath, userHome);
+
+    conf.set(OZONE_USER_HOME_PREFIX, "/userhome");
+    userHomePath = new Path("/userhome/" + username);
+    userHome = fs.getHomeDirectory();
+    Assert.assertEquals(root, userHome);
+
+    fs.mkdirs(userHomePath);
+    userHome = fs.getHomeDirectory();
+    Assert.assertEquals(userHomePath, userHome);
   }
 }
