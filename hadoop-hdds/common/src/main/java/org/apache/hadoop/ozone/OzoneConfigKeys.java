@@ -642,6 +642,11 @@ public final class OzoneConfigKeys {
   public static final String OZONE_SCM_CLOSE_CONTAINER_WAIT_DURATION =
       "ozone.scm.close.container.wait.duration";
 
+  public static final String OZONE_USER_HOME_PREFIX =
+      "ozone.user.home.prefix";
+  public static final String OZONE_USER_HOME_PREFIX_DEFAULT =
+      "/user";
+
   /**
    * There is no need to instantiate this class.
    */
