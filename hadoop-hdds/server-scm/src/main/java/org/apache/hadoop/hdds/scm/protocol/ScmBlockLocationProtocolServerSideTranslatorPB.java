@@ -22,6 +22,8 @@ import com.google.protobuf.ServiceException;
 import java.io.IOException;
 import java.util.List;
 import java.util.stream.Collectors;
+import org.apache.hadoop.hdds.ComponentVersion;
+import org.apache.hadoop.hdds.HDDSVersion;
 import org.apache.hadoop.hdds.annotation.InterfaceAudience;
 import org.apache.hadoop.hdds.client.ReplicationConfig;
 import org.apache.hadoop.hdds.protocol.DatanodeDetails;
@@ -47,6 +49,9 @@ import org.apache.hadoop.hdds.scm.container.common.helpers.ExcludeList;
 import org.apache.hadoop.hdds.scm.exceptions.SCMException;
 import org.apache.hadoop.hdds.scm.ha.RatisUtil;
 import org.apache.hadoop.hdds.scm.net.InnerNode;
+import org.apache.hadoop.hdds.scm.node.DatanodeInfo;
+import org.apache.hadoop.hdds.scm.node.NodeManager;
+import org.apache.hadoop.hdds.scm.pipeline.Pipeline;
 import org.apache.hadoop.hdds.scm.protocolPB.ScmBlockLocationProtocolPB;
 import org.apache.hadoop.hdds.scm.protocolPB.StorageContainerLocationProtocolPB;
 import org.apache.hadoop.hdds.scm.server.StorageContainerManager;
@@ -211,11 +216,76 @@ public final class ScmBlockLocationProtocolServerSideTranslatorPB
           SCMException.ResultCodes.FAILED_TO_ALLOCATE_ENOUGH_BLOCKS);
     }
     for (AllocatedBlock block : allocatedBlocks) {
+      Pipeline pipeline = block.getPipeline();
+      int writeVersion = computeClusterWriteVersion(pipeline);
+      HddsProtos.Pipeline pipelineProto = withWriteVersion(
+          pipeline.getProtobufMessage(clientVersion, Name.IO_PORTS),
+          writeVersion);
       builder.addBlocks(AllocateBlockResponse.newBuilder()
           .setContainerBlockID(block.getBlockID().getProtobuf())
-          .setPipeline(block.getPipeline().getProtobufMessage(clientVersion, Name.IO_PORTS)));
+          .setPipeline(pipelineProto));
     }
 
+    return builder.build();
+  }
+
+  /**
+   * Computes the version clients should use for writes to the given pipeline,
+   * based on the cluster's finalization status. During a rolling upgrade the
+   * datanodes may already run newer software while the cluster is still
+   * pre-finalized; clients must not enable newer write-path features until
+   * finalization completes. The value is the lowest apparent version last
+   * reported by the datanodes in the pipeline, so every datanode handling the
+   * client's writes uses the same version. SCM's own apparent version is used
+   * only as a fallback for the (unexpected) case of a pipeline with no nodes.
+   */
+  private int computeClusterWriteVersion(Pipeline pipeline) {
+    NodeManager nodeManager = scm.getScmNodeManager();
+    return pipeline.getNodes().stream()
+        .mapToInt(dn -> apparentVersionOf(nodeManager, dn))
+        .min()
+        .orElseGet(() ->
+            scm.getVersionManager().getApparentVersion().serialize());
+  }
+
+  /**
+   * Returns the apparent (finalized) version last reported by the given
+   * datanode, as a serialized {@link HDDSVersion} value. A datanode reporting a
+   * version newer than this SCM can recognize deserializes to
+   * {@link HDDSVersion#UNKNOWN_VERSION} (-1); that, and a datanode SCM has no
+   * record of, are treated as the oldest known version so clients fall back to
+   * the most conservative, backward-compatible behavior.
+   */
+  private static int apparentVersionOf(NodeManager nodeManager,
+      DatanodeDetails dn) {
+    DatanodeInfo info = nodeManager.getDatanodeInfo(dn);
+    if (info == null) {
+      return HDDSVersion.DEFAULT_VERSION.serialize();
+    }
+    ComponentVersion apparentVersion = info.getLastKnownApparentVersion();
+    if (apparentVersion == null
+        || apparentVersion == HDDSVersion.UNKNOWN_VERSION) {
+      return HDDSVersion.DEFAULT_VERSION.serialize();
+    }
+    return apparentVersion.serialize();
+  }
+
+  /**
+   * Returns a copy of the pipeline proto with every member's currentVersion
+   * overridden with the computed cluster write version. The override is applied
+   * only to the outgoing proto sent to the client; the in-memory pipeline and
+   * its {@link DatanodeDetails} objects (shared with SCM internal state) are
+   * left untouched, so persistence and admin paths keep the real datanode
+   * version. Member order is preserved, keeping {@code memberOrders} and
+   * {@code memberReplicaIndexes} indices valid.
+   */
+  private static HddsProtos.Pipeline withWriteVersion(
+      HddsProtos.Pipeline proto, int writeVersion) {
+    HddsProtos.Pipeline.Builder builder = proto.toBuilder();
+    for (int i = 0; i < builder.getMembersCount(); i++) {
+      builder.setMembers(i,
+          builder.getMembers(i).toBuilder().setCurrentVersion(writeVersion));
+    }
     return builder.build();
   }
 
