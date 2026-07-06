@@ -20,7 +20,9 @@ package org.apache.hadoop.hdds.scm.protocol;
 import com.google.protobuf.RpcController;
 import com.google.protobuf.ServiceException;
 import java.io.IOException;
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.stream.Collectors;
 import org.apache.hadoop.hdds.ComponentVersion;
 import org.apache.hadoop.hdds.HDDSVersion;
@@ -51,7 +53,9 @@ import org.apache.hadoop.hdds.scm.ha.RatisUtil;
 import org.apache.hadoop.hdds.scm.net.InnerNode;
 import org.apache.hadoop.hdds.scm.node.DatanodeInfo;
 import org.apache.hadoop.hdds.scm.node.NodeManager;
+import org.apache.hadoop.hdds.scm.node.states.NodeNotFoundException;
 import org.apache.hadoop.hdds.scm.pipeline.Pipeline;
+import org.apache.hadoop.hdds.scm.pipeline.PipelineID;
 import org.apache.hadoop.hdds.scm.protocolPB.ScmBlockLocationProtocolPB;
 import org.apache.hadoop.hdds.scm.protocolPB.StorageContainerLocationProtocolPB;
 import org.apache.hadoop.hdds.scm.server.StorageContainerManager;
@@ -215,12 +219,14 @@ public final class ScmBlockLocationProtocolServerSideTranslatorPB
           " blocks. Requested " + request.getNumBlocks() + " blocks",
           SCMException.ResultCodes.FAILED_TO_ALLOCATE_ENOUGH_BLOCKS);
     }
+    Map<PipelineID, HddsProtos.Pipeline> pipelineProtoCache = new HashMap<>();
     for (AllocatedBlock block : allocatedBlocks) {
       Pipeline pipeline = block.getPipeline();
-      int writeVersion = computeClusterWriteVersion(pipeline);
-      HddsProtos.Pipeline pipelineProto = withWriteVersion(
-          pipeline.getProtobufMessage(clientVersion, Name.IO_PORTS),
-          writeVersion);
+      HddsProtos.Pipeline pipelineProto =
+          pipelineProtoCache.computeIfAbsent(pipeline.getId(), id ->
+              withWriteVersion(
+                  pipeline.getProtobufMessage(clientVersion, Name.IO_PORTS),
+                  computeClusterWriteVersion(pipeline)));
       builder.addBlocks(AllocateBlockResponse.newBuilder()
           .setContainerBlockID(block.getBlockID().getProtobuf())
           .setPipeline(pipelineProto));
@@ -243,9 +249,7 @@ public final class ScmBlockLocationProtocolServerSideTranslatorPB
     NodeManager nodeManager = scm.getScmNodeManager();
     return pipeline.getNodes().stream()
         .mapToInt(dn -> apparentVersionOf(nodeManager, dn))
-        .min()
-        .orElseGet(() ->
-            scm.getVersionManager().getApparentVersion().serialize());
+        .min();
   }
 
   /**
@@ -257,10 +261,10 @@ public final class ScmBlockLocationProtocolServerSideTranslatorPB
    * the most conservative, backward-compatible behavior.
    */
   private static int apparentVersionOf(NodeManager nodeManager,
-      DatanodeDetails dn) {
+      DatanodeDetails dn) throws NodeNotFoundException {
     DatanodeInfo info = nodeManager.getDatanodeInfo(dn);
     if (info == null) {
-      return HDDSVersion.DEFAULT_VERSION.serialize();
+      throw new NodeNotFoundException(dn.getID());
     }
     ComponentVersion apparentVersion = info.getLastKnownApparentVersion();
     if (apparentVersion == null
