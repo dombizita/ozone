@@ -19,6 +19,7 @@ package org.apache.hadoop.hdds.scm.protocol;
 
 import static org.apache.hadoop.hdds.protocol.MockDatanodeDetails.randomDatanodeDetails;
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyInt;
 import static org.mockito.ArgumentMatchers.anyLong;
@@ -32,7 +33,6 @@ import static org.mockito.Mockito.when;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.List;
-import org.apache.hadoop.hdds.ComponentVersion;
 import org.apache.hadoop.hdds.HDDSVersion;
 import org.apache.hadoop.hdds.client.ContainerBlockID;
 import org.apache.hadoop.hdds.client.RatisReplicationConfig;
@@ -104,6 +104,12 @@ class TestScmBlockLocationProtocolServerSideTranslatorPB {
         anyString(), any(), anyString())).thenReturn(blocks);
     when(scm.getScmNodeManager()).thenReturn(nodeManager);
 
+    // getLowestApparentVersion is a default method on NodeManager; run the real
+    // reduction so the min-of-pipeline-nodes logic and the missing-node check
+    // are exercised through the common method.
+    lenient().doCallRealMethod().when(nodeManager)
+        .getLowestApparentVersion(any(DatanodeDetails[].class));
+
     // Default: every datanode finalized to ZDU.
     for (DatanodeDetails dn : nodes) {
       setDatanodeApparentVersion(dn, HDDSVersion.ZDU);
@@ -114,9 +120,9 @@ class TestScmBlockLocationProtocolServerSideTranslatorPB {
   }
 
   private void setDatanodeApparentVersion(DatanodeDetails dn,
-      ComponentVersion version) {
+      HDDSVersion version) {
     DatanodeInfo info = mock(DatanodeInfo.class);
-    lenient().when(info.getLastKnownApparentVersion()).thenReturn(version);
+    lenient().when(info.getApparentHddsVersion()).thenReturn(version);
     when(nodeManager.getDatanodeInfo(dn)).thenReturn(info);
   }
 
@@ -200,11 +206,12 @@ class TestScmBlockLocationProtocolServerSideTranslatorPB {
   }
 
   @Test
-  void missingDatanodeInfoFallsBackToDefaultVersion() throws Exception {
+  void missingDatanodeInfoThrows() throws Exception {
+    // SCM has no record of a pipeline node it just allocated on: this should
+    // not happen, so fail fast rather than silently clamp the client version.
     when(nodeManager.getDatanodeInfo(nodes.get(2))).thenReturn(null);
 
-    assertAllMembersHaveVersion(HDDSVersion.DEFAULT_VERSION.serialize(),
-        allocateAndGetMembers());
+    assertThrows(IllegalArgumentException.class, this::allocateAndGetMembers);
   }
 
   @Test

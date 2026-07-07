@@ -24,8 +24,6 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.stream.Collectors;
-import org.apache.hadoop.hdds.ComponentVersion;
-import org.apache.hadoop.hdds.HDDSVersion;
 import org.apache.hadoop.hdds.annotation.InterfaceAudience;
 import org.apache.hadoop.hdds.client.ReplicationConfig;
 import org.apache.hadoop.hdds.protocol.DatanodeDetails;
@@ -51,7 +49,6 @@ import org.apache.hadoop.hdds.scm.container.common.helpers.ExcludeList;
 import org.apache.hadoop.hdds.scm.exceptions.SCMException;
 import org.apache.hadoop.hdds.scm.ha.RatisUtil;
 import org.apache.hadoop.hdds.scm.net.InnerNode;
-import org.apache.hadoop.hdds.scm.node.DatanodeInfo;
 import org.apache.hadoop.hdds.scm.node.NodeManager;
 import org.apache.hadoop.hdds.scm.node.states.NodeNotFoundException;
 import org.apache.hadoop.hdds.scm.pipeline.Pipeline;
@@ -242,36 +239,19 @@ public final class ScmBlockLocationProtocolServerSideTranslatorPB
    * pre-finalized; clients must not enable newer write-path features until
    * finalization completes. The value is the lowest apparent version last
    * reported by the datanodes in the pipeline, so every datanode handling the
-   * client's writes uses the same version. SCM's own apparent version is used
-   * only as a fallback for the (unexpected) case of a pipeline with no nodes.
+   * client's writes uses the same version. Delegates to
+   * {@link NodeManager#getLowestApparentVersion(DatanodeDetails...)}, which
+   * fails fast if SCM has no record of a pipeline node.
    */
   private int computeClusterWriteVersion(Pipeline pipeline) {
     NodeManager nodeManager = scm.getScmNodeManager();
-    return pipeline.getNodes().stream()
-        .mapToInt(dn -> apparentVersionOf(nodeManager, dn))
-        .min();
-  }
-
-  /**
-   * Returns the apparent (finalized) version last reported by the given
-   * datanode, as a serialized {@link HDDSVersion} value. A datanode reporting a
-   * version newer than this SCM can recognize deserializes to
-   * {@link HDDSVersion#UNKNOWN_VERSION} (-1); that, and a datanode SCM has no
-   * record of, are treated as the oldest known version so clients fall back to
-   * the most conservative, backward-compatible behavior.
-   */
-  private static int apparentVersionOf(NodeManager nodeManager,
-      DatanodeDetails dn) throws NodeNotFoundException {
-    DatanodeInfo info = nodeManager.getDatanodeInfo(dn);
-    if (info == null) {
-      throw new NodeNotFoundException(dn.getID());
+    try {
+      return nodeManager.getLowestApparentVersion(
+          pipeline.getNodes().toArray(new DatanodeDetails[0])).serialize();
+    } catch (NodeNotFoundException e) {
+      throw new IllegalArgumentException(
+          "Datanode not found in NodeManager. Should not happen", e);
     }
-    ComponentVersion apparentVersion = info.getLastKnownApparentVersion();
-    if (apparentVersion == null
-        || apparentVersion == HDDSVersion.UNKNOWN_VERSION) {
-      return HDDSVersion.DEFAULT_VERSION.serialize();
-    }
-    return apparentVersion.serialize();
   }
 
   /**
